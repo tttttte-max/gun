@@ -4039,8 +4039,10 @@ module.exports = {
     slots: [
       { key: 'muzzle', label: 'ДУЛО', type: 'thread', pos: [0, 0, -430], rot: [0, 0, 0],
         accepts: ['muzzle'], order: 0, group: 'body' },
-      { key: 'optic', label: 'ПРИЦЕЛ', type: 'rail', pos: [0, 40, -60], rot: [0, 0, 0],
-        accepts: ['optic', 'magnifier', 'ironRear'], length: 200, order: 2, group: 'body' },
+      /* Прицел у SCAR-H свой: модель переключает механику/коллиматор/4x
+         собственной панелью. Слот системы модулей здесь не заводим, иначе
+         на планке оказываются два прицела сразу и смотреть «сквозь» верхний
+         невозможно. */
       { key: 'under', label: 'НИЖНЯЯ', type: 'rail', pos: [0, -26, -220], rot: [0, 0, Math.PI],
         accepts: ['under'], length: 110, order: 2, group: 'body' },
       { key: 'tactical', label: 'БОКОВАЯ', type: 'rail', pos: [-26, 0, -230], rot: [0, 0, Math.PI / 2],
@@ -4050,7 +4052,7 @@ module.exports = {
       { key: 'stock', label: 'ПРИКЛАД', type: 'rear', pos: [0, -10, 20], rot: [0, 0, 0],
         accepts: ['stock'], order: 0, group: 'body' }
     ],
-    defaults: { muzzle: 'flash_a2', optic: 'reddot_t2', mag: 'mag_762_20',
+    defaults: { muzzle: 'flash_a2', mag: 'mag_762_20',
       stock: 'stock_telescopic' }
   },
 
@@ -4475,8 +4477,12 @@ function buildSCAR(THREE, opts = {}) {
     copper:   std({ color: 0xa4703f, roughness: 0.33, metalness: 0.90 }),
     rubber:   std({ color: 0x141518, roughness: 0.95, metalness: 0.02 }),
     bore:     std({ color: 0x0b0c0d, roughness: 0.42, metalness: 0.70, side: THREE.DoubleSide }),
-    glass:    std({ color: 0x2b3f52, roughness: 0.08, metalness: 0.30,
-                    transparent: true, opacity: 0.38 }),
+    /* Линзы прицела: через них должна быть видна цель, поэтому стекло
+       почти прозрачное и не пишет глубину — иначе оно перекрывает всё,
+       что находится за прицелом. */
+    glass:    std({ color: 0x9fb4c4, roughness: 0.04, metalness: 0.10,
+                    transparent: true, opacity: 0.10, depthWrite: false,
+                    side: THREE.DoubleSide }),
     dot:      new THREE.MeshBasicMaterial({ color: 0xff2a12, transparent: true, opacity: 0.95 })
   };
   M.glass.envMapIntensity = 2.2;
