@@ -33,7 +33,6 @@
   <button class="btn" id="fire">ОГОНЬ</button>
   <button class="btn" id="rel">ПЕРЕЗАРЯДКА</button>
   <button class="btn" id="ads">ПРИЦЕЛ</button>
-</div>
   <button class="btn" id="mode">АВТО</button>
 </div>
 <div id="hint">ПРОБЕЛ — огонь · R — перезарядка · X — режим огня · C — фонарь · Z — ЛЦУ · F или ПКМ — прицеливание · TAB — модули</div>
@@ -5658,15 +5657,64 @@ window.__ATTACH_DEBUG = () => ({
 });
 
 /* Управление с клавиатуры: TAB — панель, цифры — слот, стрелки — перебор. */
+/* Фонарь (C) и ЛЦУ (Z). Если подходящий прибор ещё не установлен, клавиша
+   сама вешает его на первую совместимую планку — иначе она выглядела бы
+   нерабочей на пустом оружии. */
+function attachBeamModuleFor(kind) {
+  const want = kind === 'laser' ? ['laser_dbal', 'combo_light_laser']
+    : ['light_tac', 'combo_light_laser'];
+  for (const s of attachSlots()) {
+    const cur = ATTACH_STATE.config[s.key];
+    if (cur && want.indexOf(cur) >= 0) return null;          // уже стоит
+  }
+  for (const s of attachSlots()) {
+    for (const o of attachOptionsFor(s.key)) {
+      if (o.fits === false || !o.key) continue;
+      if (want.indexOf(o.key) >= 0) return { slot: s.key, module: o.key };
+    }
+  }
+  /* Планка для прибора ещё не стоит: у АК фонарь вешается на боковую
+     планку, которая сама является модулем и открывает под-слот. */
+  for (const s of attachSlots()) {
+    if (ATTACH_STATE.config[s.key]) continue;
+    for (const o of attachOptionsFor(s.key)) {
+      if (o.fits === false || !o.key) continue;
+      let meta;
+      try { meta = __ATTACH.REG.meta(o.key); } catch (err) { continue; }
+      const rails = meta && meta.rails;
+      if (!rails) continue;
+      for (const rk in rails) {
+        const acc = rails[rk].accepts || ['tactical'];
+        if (acc.indexOf('tactical') >= 0) return { slot: s.key, module: o.key, then: s.key + '.' + rk };
+      }
+    }
+  }
+  return null;
+}
+function attachToggleBeam(kind) {
+  if (!ATTACH_STATE.view) return;
+  const pick = attachBeamModuleFor(kind);
+  if (pick && ATTACH_STATE.apply) {
+    ATTACH_STATE.toggles[kind] = 1;
+    ATTACH_STATE.apply(pick.slot, pick.module);
+    if (pick.then) {
+      const dev = kind === 'laser' ? 'laser_dbal' : 'light_tac';
+      const ok = attachOptionsFor(pick.then).some((o) => o.key === dev && o.fits !== false);
+      if (ok) ATTACH_STATE.apply(pick.then, dev);
+    }
+  } else {
+    ATTACH_STATE.toggles[kind] = ATTACH_STATE.toggles[kind] ? 0 : 1;
+  }
+  ATTACH_STATE.view.setBeam(kind, ATTACH_STATE.toggles[kind]);
+}
+
 function attachBindKeys(onChange) {
   window.addEventListener('keydown', (e) => {
     if (e.repeat) return;
     const ui = ATTACH_STATE.ui;
     if (e.code === 'Tab') { e.preventDefault(); if (ui) ui.toggle(!ui.visible()); return; }
-    if (e.code === 'KeyC') { ATTACH_STATE.toggles.light = ATTACH_STATE.toggles.light ? 0 : 1;
-      ATTACH_STATE.view.setBeam('light', ATTACH_STATE.toggles.light); return; }
-    if (e.code === 'KeyZ') { ATTACH_STATE.toggles.laser = ATTACH_STATE.toggles.laser ? 0 : 1;
-      ATTACH_STATE.view.setBeam('laser', ATTACH_STATE.toggles.laser); return; }
+    if (e.code === 'KeyC') { attachToggleBeam('light'); return; }
+    if (e.code === 'KeyZ') { attachToggleBeam('laser'); return; }
     if (e.code === 'KeyX') { if (typeof window.__cycleFireMode === 'function') window.__cycleFireMode(); return; }
     if (e.code === 'KeyB') {
       for (const sk in ATTACH_STATE.asm.modules) {
