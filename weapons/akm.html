@@ -20,7 +20,7 @@ canvas{display:block;touch-action:none}
 </style>
 </head>
 <body>
-<div id="ui"><button id="fire" type="button">ОГОНЬ</button><button id="reload" type="button">ПЕРЕЗАРЯДКА</button></div>
+<div id="ui"><button id="fire" type="button">ОГОНЬ</button><button id="reload" type="button">ПЕРЕЗАРЯДКА</button><button id="mode" type="button">АВТО</button></div>
 <button id="mute" type="button" aria-label="Звук"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.4h3.4L12 5.2v13.6L7.4 14.6H4z"/><path id="w1" d="M15.4 9.4a3.7 3.7 0 0 1 0 5.2"/><path id="w2" d="M18.1 6.9a7.4 7.4 0 0 1 0 10.2"/><path id="w3" d="M16 9.2l5.6 5.6M21.6 9.2L16 14.8" style="display:none"/></svg></button>
 <div id="err"></div>
 <script type="module">
@@ -637,8 +637,8 @@ module.exports = function (G) {
     woodDk:   { color: [0.118, 0.046, 0.017], metal: 0.00, rough: 0.50 },
     bakelite: { color: [0.245, 0.072, 0.062], metal: 0.06, rough: 0.38 },  // «слива»
     rubber:   { color: [0.011, 0.011, 0.013], metal: 0.00, rough: 0.93 },
-    glass:    { color: [0.560, 0.640, 0.620], metal: 0.00, rough: 0.05, alpha: 0.16, coat: 1 },
-    glassAR:  { color: [0.180, 0.420, 0.360], metal: 0.10, rough: 0.05, alpha: 0.30, coat: 1 },  // просветление
+    glass:    { color: [0.780, 0.850, 0.840], metal: 0.00, rough: 0.03, alpha: 0.07, coat: 1 },
+    glassAR:  { color: [0.420, 0.640, 0.590], metal: 0.06, rough: 0.03, alpha: 0.12, coat: 1 },  // просветление
     reticle:  { color: [0.000, 0.000, 0.000], metal: 0.00, rough: 1.00, emis: [2.60, 0.22, 0.10], alpha: 0.95 },
     lampHot:  { color: [0.000, 0.000, 0.000], metal: 0.00, rough: 1.00, emis: [3.00, 2.70, 2.20] },
     laserRed: { color: [0.000, 0.000, 0.000], metal: 0.00, rough: 1.00, emis: [4.00, 0.10, 0.05] },
@@ -3022,9 +3022,13 @@ module.exports = function () {
       /* Штатные механические прицелы стоят на планке (ось 138 мм) и
          перекрывают любой установленный прицел — при установке оптики
          они «складываются», то есть убираются. */
+      /* Обмер модели: целик стоит на планке у ресивера (Z -12..21,
+         X -18..18, Y 109..150), складная мушка — на газблоке (Z -410..-390).
+         Прежние зоны были взяты «на глаз» и не задевали ни одну деталь,
+         поэтому механика торчала сквозь установленную оптику. */
       optic: [
-        { box: [-16, 106, -230, 16, 150, -160] },   // целик
-        { box: [-16, 106, -30, 16, 150, 40] }       // мушка на газблоке/планке
+        { box: [-20, 109, -20, 20, 152, 24] },      // целик у ресивера
+        { box: [-14, 109, -414, 14, 150, -386] }    // мушка на газблоке
       ],
       /* Штатное цевьё: труба вокруг ствола и планка над ней. Зона не должна
          задевать сам ствол (Ø~20 у оси 70) и газблок, поэтому вырезаем
@@ -3180,7 +3184,10 @@ module.exports = function () {
 
       /* Группа-носитель (например «magazine») содержит и базовый магазин,
          и модуль: скрываем в ней только базовые меши, иначе исчезнет и модуль. */
-      if (!o.isMesh && o.name && byGroup[o.name]) {
+      /* Группа-носитель опознаётся по метке, а не по имени: в части моделей
+         магазин назван по-русски и по имени не совпал бы с ключом зоны. */
+      const gTag = (o.userData && o.userData.__occGroup) || o.name;
+      if (!o.isMesh && gTag && byGroup[gTag]) {
         o.traverse((c) => {
           if (c.isMesh && !(c.userData && c.userData.attachModule)) {
             c.visible = false; c.userData.__occHidden = true; hidden++;
@@ -3310,7 +3317,7 @@ function createCustomizer(opts) {
   const list = document.createElement('div'); list.id = 'custList';
   const slots = document.createElement('div'); slots.id = 'custSlots';
   const hint = document.createElement('div'); hint.id = 'custHint';
-  hint.textContent = 'TAB — панель · 1…9 — слот · ← → — модуль · B — сошки/приклад · L — фонарь · K — ЛЦУ';
+  hint.textContent = 'TAB — панель · 1…9 — слот · ← → — модуль · B — сошки/приклад · C — фонарь · Z — ЛЦУ · X — режим огня';
   host.append(warn, list, slots, hint);
   document.body.appendChild(host);
 
@@ -3502,7 +3509,16 @@ module.exports = function (G, C) {
         /* хост может увести слот в свою анимируемую группу (магазин, затвор) */
         let host = O.parentFor && O.parentFor(slot);
         if (host && typeof host.add !== 'function') host = host.group || host.obj || null;
-        (host && typeof host.add === 'function' ? host : root).add(g);
+        const parent = (host && typeof host.add === 'function') ? host : root;
+        parent.add(g);
+        /* Геометрия модуля уже посчитана в координатах оружия, а группа-
+           носитель (магазин, затвор) несёт собственное смещение внутри
+           оружия. Без компенсации модуль уезжает на это смещение. */
+        if (parent !== root && O.hostRoot) {
+          const off = new THREE.Vector3();
+          for (let o = parent; o && o !== O.hostRoot; o = o.parent) off.add(o.position);
+          g.position.copy(off).negate();
+        }
         slotGroups[slot] = g;
       }
       const key = slot + '|' + anim;
@@ -4006,7 +4022,7 @@ function createCustomizer(opts) {
   const list = document.createElement('div'); list.id = 'custList';
   const slots = document.createElement('div'); slots.id = 'custSlots';
   const hint = document.createElement('div'); hint.id = 'custHint';
-  hint.textContent = 'TAB — панель · 1…9 — слот · ← → — модуль · B — сошки/приклад · L — фонарь · K — ЛЦУ';
+  hint.textContent = 'TAB — панель · 1…9 — слот · ← → — модуль · B — сошки/приклад · C — фонарь · Z — ЛЦУ · X — режим огня';
   host.append(warn, list, slots, hint);
   document.body.appendChild(host);
 
@@ -4221,10 +4237,11 @@ function attachBindKeys(onChange) {
     if (e.repeat) return;
     const ui = ATTACH_STATE.ui;
     if (e.code === 'Tab') { e.preventDefault(); if (ui) ui.toggle(!ui.visible()); return; }
-    if (e.code === 'KeyL') { ATTACH_STATE.toggles.light = ATTACH_STATE.toggles.light ? 0 : 1;
+    if (e.code === 'KeyC') { ATTACH_STATE.toggles.light = ATTACH_STATE.toggles.light ? 0 : 1;
       ATTACH_STATE.view.setBeam('light', ATTACH_STATE.toggles.light); return; }
-    if (e.code === 'KeyK') { ATTACH_STATE.toggles.laser = ATTACH_STATE.toggles.laser ? 0 : 1;
+    if (e.code === 'KeyZ') { ATTACH_STATE.toggles.laser = ATTACH_STATE.toggles.laser ? 0 : 1;
       ATTACH_STATE.view.setBeam('laser', ATTACH_STATE.toggles.laser); return; }
+    if (e.code === 'KeyX') { if (typeof window.__cycleFireMode === 'function') window.__cycleFireMode(); return; }
     if (e.code === 'KeyB') {
       for (const sk in ATTACH_STATE.asm.modules) {
         const m = ATTACH_STATE.asm.modules[sk];
@@ -5169,6 +5186,7 @@ try {
 /* ATTACH: подключение (akm) */
 const ATTACH_HOST = akm;
 window.__MEASURE_HOST = ATTACH_HOST; window.__MEASURE_THREE = THREE;
+if (akm.parts && akm.parts.magazine) akm.parts.magazine.userData.__occGroup = 'magazine';
 const ATTACH_MAGHOST = () => (akm.parts && akm.parts.magazine) || null;
 let ATTACH_ASM = attachRebuildWeapon();
 
@@ -5185,7 +5203,8 @@ function attachRebuildWeapon() {
   const asm = __ATTACH.SYS.assemble(weapon, __ATTACH.REG, ATTACH_STATE.config);
   const view = __ATTACH.ADAPTER.build(THREE, asm, {
     scale: 0.001,
-    parentFor: (slotKey) => (slotKey === 'mag' ? ATTACH_MAGHOST() : null)
+    parentFor: (slotKey) => (slotKey === 'mag' ? ATTACH_MAGHOST() : null),
+    hostRoot: ATTACH_HOST
   });
   view.root.userData.attachModule = true;
   view.root.traverse((o) => { o.userData.attachModule = true; });
@@ -5508,22 +5527,30 @@ window.__ATTACH_DEBUG = () => ({
 		mk(t0, 0.012, 0.5)
 		mk(t0 + 0.04, 0.018, 0.3)
 	}
+	/* Гильза о бетон: три коротких удара латуни. Чистые синусы давали
+	   «колокольчик», поэтому тон здесь — узкополосный шум с быстрым
+	   затуханием, без тянущейся ноты. */
 	function sndCasing() {
 		if (!audio()) return
-		const t = actx.currentTime + 0.25 + Math.random() * 0.25
-		const f = [2400, 3100, 4700]
+		const t = actx.currentTime + 0.22 + Math.random() * 0.22
 		for (let i = 0; i < 3; i++) {
-			const o = actx.createOscillator()
-			o.type = 'sine'
-			o.frequency.value = f[i] * (0.96 + Math.random() * 0.08)
+			const tt = t + i * (0.055 + Math.random() * 0.05)
+			const lvl = (0.085 - i * 0.026) * (0.8 + Math.random() * 0.4)
+			if (lvl <= 0.004) continue
+			const bp = actx.createBiquadFilter()
+			bp.type = 'bandpass'
+			bp.frequency.value = 3000 + Math.random() * 2600
+			bp.Q.value = 5.5
+			const hp = actx.createBiquadFilter()
+			hp.type = 'highpass'
+			hp.frequency.value = 1800
 			const g = actx.createGain()
-			o.connect(g)
+			noiseSrc(tt, 0.05, 1).connect(bp)
+			bp.connect(hp)
+			hp.connect(g)
 			g.connect(comp)
 			g.connect(echoIn)
-			const tt = t + i * 0.012
-			env(g, tt, 0.16 - i * 0.035, 0.001, 0.06)
-			o.start(tt)
-			o.stop(tt + 0.08)
+			env(g, tt, lvl, 0.0005, 0.032)
 		}
 	}
 	function sndLatch() {
@@ -5576,7 +5603,11 @@ window.__ATTACH_DEBUG = () => ({
 
 	// ---------- состояние и анимация ----------
 	const RELOAD_MS = 2600
-	const S = { ammo: 30, held: false, lastShot: -1e9, shot: -1e9, reload: -1e9, dry: false, stage: 9 }
+	const S = { ammo: 30, held: false, lastShot: -1e9, shot: -1e9, reload: -1e9, dry: false, stage: 9,
+		mode: 'auto', semiLatch: false }
+	/* Переводчик огня АКМ: предохранитель — автоматический — одиночный. */
+	const MODE_ORDER = ['safe', 'auto', 'semi']
+	const MODE_NAME = { safe: 'ПРЕДОХР', auto: 'АВТО', semi: 'ОДИНОЧНЫЙ' }
 	let shakeAmp = 0
 	let trig = 0
 	const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v)
@@ -5596,6 +5627,8 @@ window.__ATTACH_DEBUG = () => ({
 	}
 	function tryShot(now) {
 		if (now - S.reload < RELOAD_MS) return
+		if (S.mode === 'safe') { if (!S.dry) { sndDry(); S.dry = true } return }
+		if (S.mode === 'semi' && S.semiLatch) return
 		if (now - S.lastShot < 100) return               // 600 выстрелов в минуту
 		if (S.ammo <= 0) {
 			if (!S.dry) { sndDry(); S.dry = true }
@@ -5603,6 +5636,7 @@ window.__ATTACH_DEBUG = () => ({
 		}
 		S.lastShot = (now - S.lastShot > 260) ? now : S.lastShot + 100
 		doShot(now)
+		if (S.mode === 'semi') S.semiLatch = true
 	}
 	function startReload(now) {
 		if (now - S.reload < RELOAD_MS) return
@@ -5615,6 +5649,22 @@ window.__ATTACH_DEBUG = () => ({
 	const btnFire = document.getElementById('fire')
 	const btnReload = document.getElementById('reload')
 	const btnMute = document.getElementById('mute')
+	const btnMode = document.getElementById('mode')
+	function syncMode() {
+		if (btnMode) {
+			btnMode.textContent = MODE_NAME[S.mode]
+			btnMode.classList.toggle('on', S.mode !== 'safe')
+		}
+	}
+	function cycleMode() {
+		S.mode = MODE_ORDER[(MODE_ORDER.indexOf(S.mode) + 1) % MODE_ORDER.length]
+		S.semiLatch = false
+		sndLatch()
+		syncMode()
+	}
+	window.__cycleFireMode = cycleMode
+	if (btnMode) btnMode.addEventListener('click', () => { audio(); cycleMode() })
+	syncMode()
 	const holdOn = (ev) => {
 		if (ev) ev.preventDefault()
 		audio()
@@ -5625,6 +5675,7 @@ window.__ATTACH_DEBUG = () => ({
 	}
 	const holdOff = () => {
 		S.held = false
+		S.semiLatch = false
 		btnFire.classList.remove('on')
 	}
 	btnFire.addEventListener('pointerdown', holdOn)
